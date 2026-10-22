@@ -42,6 +42,8 @@ ArenaBlockInfo ArenaBlockInfoAt(std::size_t index);
 
 // The reservation's base, or nullptr when the blocks are ordinary mappings.
 unsigned char *ArenaRegionBase();
+// The reservation's size in bytes, 0 without one.
+std::size_t    ArenaRegionSize();
 
 // Puts one block back where a saved state recorded it: its offset in the reservation, with the
 // recorded `state_size` bytes written over the fresh zeroes. Whatever the owner holds now is

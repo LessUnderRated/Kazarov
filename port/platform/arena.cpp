@@ -171,6 +171,10 @@ unsigned char *ArenaRegionBase() {
     return g_region.map;
 }
 
+std::size_t ArenaRegionSize() {
+    return g_region.map != nullptr ? g_region.size : 0;
+}
+
 unsigned char *ArenaBlockRestore(const void *owner, std::size_t offset, std::size_t usable, std::size_t lead,
                                  const unsigned char *state, std::size_t state_size) {
     if (g_region.map == nullptr) {
