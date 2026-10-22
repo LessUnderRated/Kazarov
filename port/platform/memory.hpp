@@ -18,6 +18,10 @@ struct ArenaMemory {
 // Zeroed: capacity (bytes rounded up to 64) usable bytes at base, lead usable bytes before base,
 // then an inaccessible page. Aborts with a message when the memory cannot be had.
 ArenaMemory ArenaMemoryMap(std::size_t bytes, std::size_t lead = 0);
+// The same, mapped at `at` exactly, replacing whatever mapping lies there (a state restore puts a
+// block back where it was, which the game's saved pointers require). Aborts when the address
+// cannot be taken.
+ArenaMemory ArenaMemoryMapAt(void *at, std::size_t bytes, std::size_t lead = 0);
 // Zeroes every usable byte (lead included) and returns the pages to the system.
 void ArenaMemoryZero(const ArenaMemory &memory);
 // macOS's zeroing (a fixed anonymous mapping over the range), callable anywhere for tests.

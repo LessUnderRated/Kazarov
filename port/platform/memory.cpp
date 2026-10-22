@@ -68,6 +68,38 @@ ArenaMemory ArenaMemoryMap(std::size_t bytes, std::size_t lead) {
     return {bytes_map, map_size, bytes_map + map_size - page - capacity, capacity, lead};
 }
 
+ArenaMemory ArenaMemoryMapAt(void *at, std::size_t bytes, std::size_t lead) {
+    std::size_t page = ArenaMemoryPageSize();
+    std::size_t capacity = RoundUp(bytes == 0 ? 64 : bytes, 64);
+    std::size_t map_size = RoundUp(lead + capacity, page) + page;
+    void       *map = nullptr;
+#ifdef _WIN32
+    map = Map(at, map_size, 0);
+    if (map != at) {
+        // The address is taken by a mapping this module did not make; a state restore only asks
+        // for addresses its own blocks once held, so this cannot be one of ours.
+        map = nullptr;
+    }
+#else
+    map = Map(at, map_size, MAP_FIXED);
+#endif
+    if (map == nullptr) {
+        std::fprintf(stderr, "arena: cannot map %zu bytes at %p\n", map_size, at);
+        std::abort();
+    }
+    auto *bytes_map = static_cast<unsigned char *>(map);
+#ifdef _WIN32
+    DWORD previous;
+    if (!VirtualProtect(bytes_map + map_size - page, page, PAGE_NOACCESS, &previous)) {
+        std::fprintf(stderr, "arena: cannot protect guard page\n");
+        std::abort();
+    }
+#else
+    mprotect(bytes_map + map_size - page, page, PROT_NONE);
+#endif
+    return {bytes_map, map_size, bytes_map + map_size - page - capacity, capacity, lead};
+}
+
 void ArenaMemoryZero(const ArenaMemory &memory) {
 #if defined(__linux__)
     // Private anonymous pages read back as zero after MADV_DONTNEED; elsewhere it only hints.

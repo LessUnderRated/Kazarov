@@ -1,7 +1,9 @@
 #include "platform/arena.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <vector>
 
 #include "platform/memory.hpp"
@@ -70,6 +72,85 @@ void ArenaClearAll() {
     for (const Block &block : g_blocks) {
         ArenaMemoryZero(block.memory);
     }
+}
+
+std::size_t ArenaBlockCount() {
+    return g_blocks.size();
+}
+
+ArenaBlockInfo ArenaBlockInfoAt(std::size_t index) {
+    const Block &block = g_blocks.at(index);
+    const ArenaMemory &memory = block.memory;
+    return {block.owner, memory.map, memory.map_size, memory.base, memory.capacity, memory.lead};
+}
+
+namespace {
+
+// Unmaps every recorded block that overlaps the range, and every block the owner holds: the owner's
+// block may have grown since the state was taken, and only state the restored game cannot reference
+// lives there, so the mapping goes away rather than staying to alias a future block.
+void UnmapOverlappingOrOwned(const void *owner, unsigned char *map, std::size_t map_size) {
+    const auto start = reinterpret_cast<std::uintptr_t>(map);
+    const auto end = start + map_size;
+    auto sweep = [start, end, owner](std::vector<Block> &blocks) {
+        blocks.erase(std::remove_if(blocks.begin(), blocks.end(),
+                                    [&](Block &block) {
+                                        const auto block_start =
+                                            reinterpret_cast<std::uintptr_t>(block.memory.map);
+                                        bool overlaps = block_start < end && start < block_start + block.memory.map_size;
+                                        if (!overlaps && block.owner != owner) {
+                                            return false;
+                                        }
+                                        ArenaMemoryUnmap(block.memory);
+                                        return true;
+                                    }),
+                      blocks.end());
+    };
+    sweep(g_blocks);
+    sweep(g_retired);
+}
+
+} // namespace
+
+unsigned char *ArenaBlockRestore(const void *owner, unsigned char *map, std::size_t map_size, std::size_t lead,
+                                 const unsigned char *state, std::size_t state_size) {
+    std::size_t page = ArenaMemoryPageSize();
+    std::size_t usable = map_size - page;
+    if (lead > usable || state_size != usable) {
+        std::fprintf(stderr, "arena: restore of a block at %p does not fit its recorded shape\n",
+                     static_cast<void *>(map));
+        std::abort();
+    }
+    UnmapOverlappingOrOwned(owner, map, map_size);
+    ArenaMemory memory = ArenaMemoryMapAt(map, usable - lead, lead);
+    if (memory.map != map || memory.base != map + lead) {
+        std::fprintf(stderr, "arena: restore mapped %p instead of %p\n", static_cast<void *>(memory.map),
+                     static_cast<void *>(map));
+        std::abort();
+    }
+    std::memcpy(memory.map, state, state_size);
+    g_blocks.push_back({owner, memory});
+    return memory.base;
+}
+
+void ArenaZeroOtherBlocks(const void *const *keep, std::size_t count) {
+    std::vector<Block> kept;
+    for (Block &block : g_blocks) {
+        bool wanted = false;
+        for (std::size_t i = 0; i < count; i++) {
+            if (keep[i] == block.owner) {
+                wanted = true;
+                break;
+            }
+        }
+        if (wanted) {
+            kept.push_back(block);
+        } else {
+            ArenaMemoryZero(block.memory);
+            g_retired.push_back(block);
+        }
+    }
+    g_blocks = std::move(kept);
 }
 
 bool ArenaContains(const void *pointer) {

@@ -20,6 +20,32 @@ unsigned char *ArenaBlock(const void *owner, std::size_t bytes, std::size_t lead
 // Zeroes every block, as retail's clear of the whole GlobalDataBuffer does.
 void ArenaClearAll();
 
+// What a live block is, for saving the game's state: the owner that holds it, its whole mapping,
+// and the usable window inside it (lead bytes before base, capacity after).
+struct ArenaBlockInfo {
+    const void    *owner = nullptr;
+    unsigned char *map = nullptr;
+    std::size_t    map_size = 0;
+    unsigned char *base = nullptr;
+    std::size_t    capacity = 0;
+    std::size_t    lead = 0;
+};
+
+// The live blocks, in mapping order.
+std::size_t   ArenaBlockCount();
+ArenaBlockInfo ArenaBlockInfoAt(std::size_t index);
+
+// Puts one block back where a saved state recorded it: mapped at `map` again, with the recorded
+// `state_size` bytes from `map` written over the fresh mapping's zeroes. Any block the owner
+// holds now is unmapped (only state the restored game cannot reference lived there), and a
+// retired mapping under the address is replaced. Returns the block's base.
+unsigned char *ArenaBlockRestore(const void *owner, unsigned char *map, std::size_t map_size, std::size_t lead,
+                                 const unsigned char *state, std::size_t state_size);
+
+// Zeroes every live block whose owner is not in `keep`, so pointers the restored game cannot hold
+// read zeroes as retired blocks do.
+void ArenaZeroOtherBlocks(const void *const *keep, std::size_t count);
+
 // Retired blocks count: the game can still hold a pointer into one.
 bool ArenaContains(const void *pointer);
 
